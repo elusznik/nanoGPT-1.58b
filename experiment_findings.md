@@ -46,9 +46,9 @@ To convert Karpathy's `nanoGPT` into a ternary-weight training experiment and te
 
 ## Experiment 7: RoPE + QK-Norm + Muon (Best Run So Far)
 * **Modification:** Replaced absolute positional embeddings with **Rotary Positional Embeddings (RoPE)**.
-* **Duration:** 900 iterations.
-* **Result:** Reached a validation loss of **1.5192** (was 1.5718 at 500 iterations).
-* **Observation:** RoPE improved on the QK-Norm run by about **0.07** validation loss over a similar training window. That is encouraging, but it is still one experiment on Tiny Shakespeare, not a general claim about BitNet models.
+* **Duration:** 2,000 iterations total.
+* **Result:** Reached a best validation loss of **1.4840** at iteration **1,500** (`1.4961` at 1000, `1.4910` at 1250, `1.4932` at 1750, `1.4861` at 2000).
+* **Observation:** RoPE improved on the QK-Norm run and continued getting better well past the original 900-step checkpoint. The best model landed at 1500 steps, after which validation flattened slightly while train loss kept dropping, suggesting mild overfitting or a local plateau rather than continued clean gains.
 
 ## Next Steps / Future Research
 1. **Scale Up:** Increase parameter count to 50M+ to break the 1.47 loss barrier.

@@ -52,9 +52,9 @@ To turn Karpathy's `nanoGPT` into a ternary-weight training experiment and test 
 | **Exp 4: RMSNorm** | Muon | + RMSNorm | 3.04 (500) | Slight improvement |
 | **Exp 5: Sparsity** | Muon | + 2:4 Sparsity | 3.32 (300) | Worse in this run |
 | **Exp 6: QK-Norm** | Muon | + QK-Norm | 1.64 (500) | Major improvement |
-| **Exp 7: RoPE** | Muon | **+ RoPE** | **1.51 (900)** | Best run so far |
+| **Exp 7: RoPE** | Muon | **+ RoPE** | **1.48 (1500)** | Best run so far |
 
-**Observation:** In these Tiny Shakespeare runs, QK-Norm and RoPE were the biggest improvements. The best run reached a validation loss of about **1.51** at **900** steps, compared with a full-precision baseline around **1.47** at **5000** steps. That is encouraging, but it is still a narrow result from one small setup rather than a general benchmark claim.
+**Observation:** In these Tiny Shakespeare runs, QK-Norm and RoPE were the biggest improvements. Extending the RoPE run out to **2000** steps brought the best validation loss down to **1.4840** at **1500** steps, after which validation flattened slightly (`1.4932` at 1750 and `1.4861` at 2000). That is encouraging and shows the 900-step checkpoint was still undertrained, but it is still a narrow result from one small setup rather than a general benchmark claim.
 
 ---
 
