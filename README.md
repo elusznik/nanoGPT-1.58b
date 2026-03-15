@@ -53,8 +53,14 @@ To turn Karpathy's `nanoGPT` into a ternary-weight training experiment and test 
 | **Exp 5: Sparsity** | Muon | + 2:4 Sparsity | 3.32 (300) | Worse in this run |
 | **Exp 6: QK-Norm** | Muon | + QK-Norm | 1.64 (500) | Major improvement |
 | **Exp 7: RoPE** | Muon | **+ RoPE** | **1.48 (1500)** | Best run so far |
+| **Dense Control** | Muon | RoPE + RMSNorm + QK-Norm + ReLU² + `nn.Linear` | **1.48 (1000)** | Best matched control |
 
-**Observation:** In these Tiny Shakespeare runs, QK-Norm and RoPE were the biggest improvements. Extending the RoPE run out to **2000** steps brought the best validation loss down to **1.4840** at **1500** steps, after which validation flattened slightly (`1.4932` at 1750 and `1.4861` at 2000). That is encouraging and shows the 900-step checkpoint was still undertrained, but it is still a narrow result from one small setup rather than a general benchmark claim.
+**Observation:** In these Tiny Shakespeare runs, QK-Norm and RoPE were the biggest improvements. Extending the ternary RoPE run out to **2000** steps brought the best validation loss down to **1.4840** at **1500** steps, after which validation flattened slightly (`1.4932` at 1750 and `1.4861` at 2000). A matched dense control using the same modernized architecture but standard `nn.Linear` reached **1.4752** at **1000** steps, so the dense model is still better, but the remaining ternary penalty is small: only about **0.021** validation loss at 1000 and **0.009** against the ternary best.
+
+### Current Conclusion
+1.  The modernized architecture matters a lot: RoPE, RMSNorm, QK-Norm, ReLU², and Muon are doing most of the heavy lifting.
+2.  Standard dense `nn.Linear` still outperforms the ternary `BitLinear` version in a matched comparison.
+3.  The gap is small enough that the ternary model still looks credible as a size-focused research direction, especially if it can be scaled up or exported to a real low-bit inference runtime.
 
 ---
 
