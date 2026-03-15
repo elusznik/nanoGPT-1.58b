@@ -203,9 +203,9 @@ optimizers = model.configure_optimizers(weight_decay, learning_rate, (beta1, bet
 if not isinstance(optimizers, list):
     optimizers = [optimizers]
 
-if init_from == 'resume':
-    # skip complicated resume logic for now when using multiple optimizers
-    pass
+if init_from == 'resume' and 'optimizers' in checkpoint:
+    for opt, opt_state in zip(optimizers, checkpoint['optimizers']):
+        opt.load_state_dict(opt_state)
 checkpoint = None # free up memory
 
 # compile the model

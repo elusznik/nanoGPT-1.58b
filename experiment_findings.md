@@ -40,9 +40,9 @@ To convert Karpathy's `nanoGPT` into a 1.58-bit ternary network (BitNet) and tes
 
 ## Experiment 6: Muon + Squared ReLU + RMSNorm + QK-Norm
 * **Modification:** Added QK-Norm (RMSNorm on Queries and Keys) to stabilize the attention mechanism and reverted sparsity.
-* **Duration:** 500 iterations.
-* **Result:** Reached a validation loss of **1.6466**.
-* **Observation:** **THE BREAKTHROUGH.** This model is 10x more efficient than the AdamW baseline and produces coherent English dialogue. QK-Norm is essential for stable BitNet training at these scales.
+* **Duration:** 1,000 iterations.
+* **Result:** Reached a validation loss of **1.5404** (was 1.6466 at 500 iterations).
+* **Observation:** **THE BREAKTHROUGH.** This model is 10x more efficient than the AdamW baseline and produces coherent English dialogue. QK-Norm is essential for stable BitNet training at these scales. At 1,000 steps, it is approaching parity with the 32-bit float benchmark (1.47).
 
 ## Next Steps / Future Research
 1. **Scale Up:** Increase parameter count to 50M+ to break the 1.5 loss barrier.
