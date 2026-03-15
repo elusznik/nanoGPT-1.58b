@@ -196,6 +196,9 @@ model.to(device)
 scaler = torch.amp.GradScaler('cuda', enabled=(dtype == 'float16'))
 
 # optimizer
+# SOTA Hybrid Configuration:
+# - Muon optimizes 2D weight matrices (aggressive convergence)
+# - AdamW optimizes 1D vectors/embeddings (fine-grained stability)
 optimizers = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
 if not isinstance(optimizers, list):
     optimizers = [optimizers]

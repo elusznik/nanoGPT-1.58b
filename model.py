@@ -15,7 +15,12 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+# --- SOTA BITNET 1.58B IMPLEMENTATION ---
+
 def quantize_to_158(w):
+    """
+    Quantizes weights to ternary values {-1, 0, 1} using the absolute mean scale.
+    """
     # 1. Find the average magnitude of the weights
     scale = 1.0 / w.abs().mean().clamp_(min=1e-5)
     
@@ -28,6 +33,9 @@ def quantize_to_158(w):
     return (w_quant - w).detach() + w
 
 class BitLinear(nn.Linear):
+    """
+    Custom Linear layer that performs 1.58-bit quantization-aware training.
+    """
     def __init__(self, in_features, out_features, bias=False):
         # BitNet papers usually drop the bias for ternary layers
         super().__init__(in_features, out_features, bias=bias)
@@ -44,6 +52,9 @@ class BitLinear(nn.Linear):
         return nn.functional.linear(x, quantized_weights, self.bias)
 
 class RMSNorm(nn.Module):
+    """
+    Root Mean Square Normalization - faster and more stable for BitNets than LayerNorm.
+    """
     def __init__(self, dim, bias=False):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(dim))
@@ -59,8 +70,9 @@ class CausalSelfAttention(nn.Module):
         super().__init__()
         assert config.n_embd % config.n_head == 0
         # key, query, value projections for all heads, but in a batch
+        # Using BitLinear for the massive 2D matrices
         self.c_attn = BitLinear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-        # QK-Norm: stabilizers for high learning rates
+        # QK-Norm: Essential stabilizers for 1.58-bit attention
         self.q_norm = RMSNorm(config.n_embd // config.n_head)
         self.k_norm = RMSNorm(config.n_embd // config.n_head)
         # output projection
