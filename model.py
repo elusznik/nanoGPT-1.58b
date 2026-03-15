@@ -64,6 +64,32 @@ class RMSNorm(nn.Module):
         ff = x.pow(2).mean(-1, keepdim=True)
         return x * torch.rsqrt(ff + 1e-6) * self.weight
 
+# --- RoPE Implementation ---
+
+def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+    t = torch.arange(end, device=freqs.device)
+    freqs = torch.outer(t, freqs).float()
+    freqs_cos = torch.cos(freqs)
+    freqs_sin = torch.sin(freqs)
+    return torch.stack([freqs_cos, freqs_sin], dim=-1)
+
+def apply_rope(x, freqs_cis):
+    # x: (B, nh, T, hs)
+    # freqs_cis: (T, hs/2, 2)
+    B, nh, T, hs = x.shape
+    x = x.view(B, nh, T, hs // 2, 2)
+    cos = freqs_cis[:T, :, 0] # (T, hs/2)
+    sin = freqs_cis[:T, :, 1] # (T, hs/2)
+    # Broadcase cos, sin to (B, nh, T, hs/2)
+    cos = cos.view(1, 1, T, hs // 2)
+    sin = sin.view(1, 1, T, hs // 2)
+    x_out = torch.stack([
+        x[..., 0] * cos - x[..., 1] * sin,
+        x[..., 0] * sin + x[..., 1] * cos
+    ], dim=-1)
+    return x_out.view(B, nh, T, hs)
+
 class CausalSelfAttention(nn.Module):
 
     def __init__(self, config):
@@ -91,7 +117,7 @@ class CausalSelfAttention(nn.Module):
             self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
                                         .view(1, 1, config.block_size, config.block_size))
 
-    def forward(self, x):
+    def forward(self, x, freqs_cis=None):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
@@ -103,6 +129,11 @@ class CausalSelfAttention(nn.Module):
         # Apply QK-Norm
         q = self.q_norm(q)
         k = self.k_norm(k)
+
+        # Apply RoPE if provided
+        if freqs_cis is not None:
+            q = apply_rope(q, freqs_cis)
+            k = apply_rope(k, freqs_cis)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         if self.flash:
@@ -150,8 +181,8 @@ class Block(nn.Module):
         self.ln_2 = RMSNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)
 
-    def forward(self, x):
-        x = x + self.attn(self.ln_1(x))
+    def forward(self, x, freqs_cis=None):
+        x = x + self.attn(self.ln_1(x), freqs_cis=freqs_cis)
         x = x + self.mlp(self.ln_2(x))
         return x
 
@@ -175,7 +206,6 @@ class GPT(nn.Module):
 
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
-            wpe = nn.Embedding(config.block_size, config.n_embd),
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = RMSNorm(config.n_embd, bias=config.bias),
@@ -186,6 +216,9 @@ class GPT(nn.Module):
         # This behavior is deprecated and will be an error in future versions"
         # not 100% sure what this is, so far seems to be harmless. TODO investigate
         self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
+
+        # RoPE precomputation
+        self.register_buffer("freqs_cis", precompute_freqs_cis(config.n_embd // config.n_head, config.block_size))
 
         # init all weights
         self.apply(self._init_weights)
@@ -205,8 +238,7 @@ class GPT(nn.Module):
         params are actually used as weights in the final layer, so we include them.
         """
         n_params = sum(p.numel() for p in self.parameters())
-        if non_embedding:
-            n_params -= self.transformer.wpe.weight.numel()
+        # No wpe to subtract anymore
         return n_params
 
     def _init_weights(self, module):
@@ -221,14 +253,12 @@ class GPT(nn.Module):
         device = idx.device
         b, t = idx.size()
         assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
-        pos = torch.arange(0, t, dtype=torch.long, device=device) # shape (t)
 
         # forward the GPT model itself
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
-        pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd)
-        x = self.transformer.drop(tok_emb + pos_emb)
+        x = self.transformer.drop(tok_emb)
         for block in self.transformer.h:
-            x = block(x)
+            x = block(x, freqs_cis=self.freqs_cis)
         x = self.transformer.ln_f(x)
 
         if targets is not None:

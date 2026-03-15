@@ -44,7 +44,13 @@ To convert Karpathy's `nanoGPT` into a 1.58-bit ternary network (BitNet) and tes
 * **Result:** Reached a validation loss of **1.5404** (was 1.6466 at 500 iterations).
 * **Observation:** **THE BREAKTHROUGH.** This model is 10x more efficient than the AdamW baseline and produces coherent English dialogue. QK-Norm is essential for stable BitNet training at these scales. At 1,000 steps, it is approaching parity with the 32-bit float benchmark (1.47).
 
+## Experiment 7: RoPE + QK-Norm + Muon (Current SOTA)
+* **Modification:** Replaced absolute positional embeddings with **Rotary Positional Embeddings (RoPE)**.
+* **Duration:** 500 iterations.
+* **Result:** Reached a validation loss of **1.5718**.
+* **Observation:** RoPE provided a massive **0.07** drop in loss over Experiment 6 in the same number of steps. The model is noticeably more stable and handles longer context more gracefully.
+
 ## Next Steps / Future Research
-1. **Scale Up:** Increase parameter count to 50M+ to break the 1.5 loss barrier.
+1. **Scale Up:** Increase parameter count to 50M+ to break the 1.47 loss barrier.
 2. **Value Embedding Mixing:** Incorporate multi-token prediction and value mixing from `modded-nanogpt`.
 3. **AutoResearch:** Autonomous hyperparameter tuning.
