@@ -51,6 +51,11 @@ class BitLinear(nn.Linear):
         # Perform the linear transformation
         return nn.functional.linear(x, quantized_weights, self.bias)
 
+
+class DenseLinear(nn.Linear):
+    """Vanilla linear layer used for matched dense control runs."""
+    pass
+
 class RMSNorm(nn.Module):
     """
     Root Mean Square Normalization - faster and more stable for BitNets than LayerNorm.
@@ -95,14 +100,14 @@ class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.n_embd % config.n_head == 0
+        linear_cls = BitLinear if config.use_bitlinear else DenseLinear
         # key, query, value projections for all heads, but in a batch
-        # Using BitLinear for the massive 2D matrices
-        self.c_attn = BitLinear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        self.c_attn = linear_cls(config.n_embd, 3 * config.n_embd, bias=config.bias)
         # QK-Norm: Essential stabilizers for 1.58-bit attention
         self.q_norm = RMSNorm(config.n_embd // config.n_head)
         self.k_norm = RMSNorm(config.n_embd // config.n_head)
         # output projection
-        self.c_proj = BitLinear(config.n_embd, config.n_embd, bias=config.bias)
+        self.c_proj = linear_cls(config.n_embd, config.n_embd, bias=config.bias)
         # regularization
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
@@ -160,9 +165,10 @@ class MLP(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.c_fc    = BitLinear(config.n_embd, 4 * config.n_embd, bias=config.bias)
+        linear_cls = BitLinear if config.use_bitlinear else DenseLinear
+        self.c_fc    = linear_cls(config.n_embd, 4 * config.n_embd, bias=config.bias)
         self.gelu    = SquaredReLU()
-        self.c_proj  = BitLinear(4 * config.n_embd, config.n_embd, bias=config.bias)
+        self.c_proj  = linear_cls(4 * config.n_embd, config.n_embd, bias=config.bias)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
@@ -195,6 +201,7 @@ class GPTConfig:
     n_embd: int = 768
     dropout: float = 0.0
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    use_bitlinear: bool = True
 
 class GPT(nn.Module):
 
