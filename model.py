@@ -278,7 +278,10 @@ class GPT(nn.Module):
         # but want to use a smaller block size for some smaller, simpler model
         assert block_size <= self.config.block_size
         self.config.block_size = block_size
-        self.transformer.wpe.weight = nn.Parameter(self.transformer.wpe.weight[:block_size])
+        self.freqs_cis = precompute_freqs_cis(
+            self.config.n_embd // self.config.n_head,
+            block_size,
+        ).to(self.freqs_cis.device)
         for block in self.transformer.h:
             if hasattr(block.attn, 'bias'):
                 block.attn.bias = block.attn.bias[:,:,:block_size,:block_size]
@@ -311,32 +314,48 @@ class GPT(nn.Module):
         config = GPTConfig(**config_args)
         model = GPT(config)
         sd = model.state_dict()
-        sd_keys = sd.keys()
-        sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')] # discard this mask / buffer, not a param
 
         # init a huggingface/transformers model
         model_hf = GPT2LMHeadModel.from_pretrained(model_type)
         sd_hf = model_hf.state_dict()
 
-        # copy while ensuring all of the parameters are aligned and match in names and shapes
-        sd_keys_hf = sd_hf.keys()
-        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')] # ignore these, just a buffer
-        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')] # same, just the mask (buffer)
+        # Copy over any weights that still have a compatible meaning.
+        # Parameters introduced by this fork (RoPE, RMSNorm-only blocks, BitLinear input norms,
+        # QK-Norm, etc.) are kept at their local initialization.
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
-        # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Linear
-        # this means that we have to transpose these weights when we import them
-        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
-        for k in sd_keys_hf:
+        ignored_hf_keys = {'transformer.wpe.weight'}
+        copied = []
+        skipped = []
+        for k, v in sd_hf.items():
+            if k.endswith('.attn.masked_bias') or k.endswith('.attn.bias'):
+                continue
+            if k in ignored_hf_keys:
+                skipped.append((k, 'not used by RoPE model'))
+                continue
+            if k not in sd:
+                skipped.append((k, 'no matching parameter in local model'))
+                continue
             if any(k.endswith(w) for w in transposed):
-                # special treatment for the Conv1D weights we need to transpose
-                assert sd_hf[k].shape[::-1] == sd[k].shape
+                if v.shape[::-1] != sd[k].shape:
+                    raise ValueError(f"shape mismatch for {k}: expected transpose into {sd[k].shape}, got {v.shape}")
                 with torch.no_grad():
-                    sd[k].copy_(sd_hf[k].t())
+                    sd[k].copy_(v.t())
             else:
-                # vanilla copy over the other parameters
-                assert sd_hf[k].shape == sd[k].shape
+                if v.shape != sd[k].shape:
+                    raise ValueError(f"shape mismatch for {k}: expected {sd[k].shape}, got {v.shape}")
                 with torch.no_grad():
-                    sd[k].copy_(sd_hf[k])
+                    sd[k].copy_(v)
+            copied.append(k)
+
+        retained = [
+            k for k in sd.keys()
+            if k not in copied and k != 'freqs_cis' and not k.endswith('.attn.bias')
+        ]
+        print(f"copied {len(copied)} tensors from pretrained GPT-2")
+        if skipped:
+            print(f"skipped {len(skipped)} incompatible GPT-2 tensors")
+        if retained:
+            print(f"retained {len(retained)} local tensors with fork-specific initialization")
 
         return model
 
