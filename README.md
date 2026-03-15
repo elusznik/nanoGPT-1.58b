@@ -41,14 +41,18 @@ To turn Karpathy's `nanoGPT` into a 1.58-bit ternary network (BitNet) and test i
 
 ### The Results (Tiny Shakespeare)
 
-| Model | Optimizer | Position | Loss (Steps) | Status |
+| Experiment | Optimizer | Arch Tweaks | Loss (Steps) | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Baseline (FP32)** | AdamW | Absolute | 1.47 (5000) | Full Precision |
-| **BitNet (1.58b)** | AdamW | Absolute | 2.61 (5000) | Babble only |
-| **BitNet (1.58b)** | Muon + QKN | Absolute | 1.64 (500) | Coherent English |
-| **BitNet (1.58b)** | **Muon + QKN** | **RoPE** | **1.51 (900)** | **SOTA English** |
+| **FP32 Baseline** | AdamW | GPT-2 Standard | 1.47 (5000) | Reference |
+| **Exp 1: BitNet Base** | AdamW | + BitLinear | 2.61 (5000) | Babble |
+| **Exp 2: Muon Jump** | Muon | + Hybrid Optimizer | 3.14 (250) | Faster |
+| **Exp 3: ReLU² Switch** | Muon | + Squared ReLU | 3.06 (500) | Stable |
+| **Exp 4: RMSNorm** | Muon | + RMSNorm | 3.04 (500) | Fast |
+| **Exp 5: Sparsity** | Muon | + 2:4 Sparsity | 3.32 (300) | Failed |
+| **Exp 6: QK-Norm** | Muon | + QK-Norm | 1.64 (500) | **English** |
+| **Exp 7: RoPE SOTA** | Muon | **+ RoPE** | **1.51 (900)** | **Shakespeare** |
 
-**Observation:** The inclusion of **RoPE** dropped the validation loss to **1.51** in just 900 steps. The 1.58-bit model has achieved **97% parity** with the FP32 GPT-2 benchmark (1.47).
+**Observation:** The inclusion of **QK-Norm** and **RoPE** dropped the validation loss to **1.51** in just 900 steps. The 1.58-bit model has achieved **97% parity** with the FP32 GPT-2 benchmark (1.47) and generates coherent Shakespearean dialogue.
 
 ---
 
