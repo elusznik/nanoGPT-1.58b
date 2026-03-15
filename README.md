@@ -8,6 +8,23 @@ This repository replaces the standard dense floating-point math in the original 
 
 The original, unmodified nanoGPT documentation can be found in [original_README.md](original_README.md).
 
+## 💻 Hardware & AMD Setup
+
+These experiments were conducted on an **AMD Radeon RX 6700 XT** GPU. 
+
+Training AI models on AMD hardware under Linux requires a specific environment configuration to achieve parity with NVIDIA CUDA performance:
+
+1.  **Python Environment:** Managed via `mise`. We used **Python 3.12**, as it is the most stable version for current ROCm PyTorch distributions.
+2.  **PyTorch ROCm:** Installed the official AMD-optimized PyTorch build:
+    ```sh
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.2.4
+    ```
+3.  **The Architecture Bypass:** The RX 6700 XT (`gfx1031`) is often not explicitly supported by pre-compiled wheels. We bypassed this by forcing the HSA driver to treat the card as a `gfx1030` (the instruction-compatible 6800/6900 series model):
+    ```sh
+    export HSA_OVERRIDE_GFX_VERSION=10.3.0
+    ```
+    This environment variable is **required** for all `train.py` and `sample.py` executions on this hardware.
+
 ---
 
 ## 🔬 The Experiment & Findings
