@@ -1,10 +1,12 @@
-# nanoGPT-1.58b (BitNet) + Muon
+# nanoGPT-1.58b (BitNet-style) + Muon
 
 ![nanoGPT](assets/nanogpt.jpg)
 
-**A modified, 1.58-bit ternary fork of Andrej Karpathy's [nanoGPT](https://github.com/karpathy/nanoGPT).**
+**A research fork of Andrej Karpathy's [nanoGPT](https://github.com/karpathy/nanoGPT) for ternary-weight training experiments.**
 
-This repository replaces the standard dense floating-point math in the original nanoGPT with the state-of-the-art **BitNet b1.58** ternary architecture. We also integrated the experimental **Muon optimizer**, **QK-Norm**, and **RoPE** to overcome the gradient instability inherent in quantization-aware training. 
+This repository explores a BitNet-style training setup inside nanoGPT: `BitLinear` layers with ternary forward weights via a Straight-Through Estimator (STE), plus experiments with **Muon**, **QK-Norm**, **RMSNorm**, **Squared ReLU**, and **RoPE**.
+
+This is a small-scale research repo, not a polished or rigorously benchmarked BitNet implementation. The model still trains and runs with normal floating-point PyTorch ops; the ternary part is the forward-pass weight quantization used during training.
 
 The original, unmodified nanoGPT documentation can be found in [original_README.md](original_README.md).
 
@@ -12,7 +14,7 @@ The original, unmodified nanoGPT documentation can be found in [original_README.
 
 These experiments were conducted on an **AMD Radeon RX 6700 XT** GPU. 
 
-Training AI models on AMD hardware under Linux requires a specific environment configuration to achieve parity with NVIDIA CUDA performance:
+Training on this AMD setup required a specific environment configuration:
 
 1.  **Python Environment:** Managed via `mise`. We used **Python 3.12**, as it is the most stable version for current ROCm PyTorch distributions.
 2.  **PyTorch ROCm:** Installed the official AMD-optimized PyTorch build:
@@ -30,14 +32,14 @@ Training AI models on AMD hardware under Linux requires a specific environment c
 ## 🔬 The Experiment & Findings
 
 ### The Goal
-To turn Karpathy's `nanoGPT` into a 1.58-bit ternary network (BitNet) and test if modern architectural improvements (Muon, QK-Norm, RoPE) can bridge the gap to full-precision performance on a "baby" 10M parameter model.
+To turn Karpathy's `nanoGPT` into a ternary-weight training experiment and test whether Muon, QK-Norm, RMSNorm, and RoPE improve training stability and validation loss on a small Tiny Shakespeare model.
 
-### The Modifications (Current SOTA)
-1.  **BitLinear Layer:** Uses the Straight-Through Estimator (STE) to force the forward pass into strictly ternary weights (`-1, 0, 1`) while keeping the backward pass gradients as full-precision floats.
-2.  **RoPE (Rotary Positional Embeddings):** Replaced absolute positional embeddings with modern RoPE for better relative spatial awareness.
-3.  **Squared ReLU ($ReLU^2$):** Replaced GeLU with Squared ReLU for improved activation sparsity and faster convergence.
-4.  **RMSNorm & QK-Norm:** Swapped LayerNorm for RMSNorm throughout, and added explicit normalization to Queries and Keys (QK-Norm) to stabilize the attention mechanism.
-5.  **Hybrid Optimizer:** Integrated Keller Jordan's **Muon** optimizer for all 2D matrices, with **AdamW** for 1D vectors.
+### What Changed
+1.  **BitLinear:** Uses an STE so the forward pass sees ternary weights (`-1, 0, 1`) while the latent weights remain full precision.
+2.  **RoPE:** Replaced learned absolute positional embeddings with rotary positional embeddings.
+3.  **Squared ReLU:** Replaced GeLU with `ReLU(x)^2`.
+4.  **RMSNorm and QK-Norm:** Swapped LayerNorm for RMSNorm and normalized queries and keys inside attention.
+5.  **Hybrid optimizer split:** Muon for 2D parameter tensors, AdamW for 1D tensors.
 
 ### The Results (Tiny Shakespeare)
 
@@ -45,18 +47,20 @@ To turn Karpathy's `nanoGPT` into a 1.58-bit ternary network (BitNet) and test i
 | :--- | :--- | :--- | :--- | :--- |
 | **FP32 Baseline** | AdamW | GPT-2 Standard | 1.47 (5000) | Reference |
 | **Exp 1: BitNet Base** | AdamW | + BitLinear | 2.61 (5000) | Babble |
-| **Exp 2: Muon Jump** | Muon | + Hybrid Optimizer | 3.14 (250) | Faster |
-| **Exp 3: ReLU² Switch** | Muon | + Squared ReLU | 3.06 (500) | Stable |
-| **Exp 4: RMSNorm** | Muon | + RMSNorm | 3.04 (500) | Fast |
-| **Exp 5: Sparsity** | Muon | + 2:4 Sparsity | 3.32 (300) | Failed |
-| **Exp 6: QK-Norm** | Muon | + QK-Norm | 1.64 (500) | **English** |
-| **Exp 7: RoPE SOTA** | Muon | **+ RoPE** | **1.51 (900)** | **Shakespeare** |
+| **Exp 2: Muon Jump** | Muon | + Hybrid Optimizer | 3.14 (250) | Faster early descent |
+| **Exp 3: ReLU² Switch** | Muon | + Squared ReLU | 3.06 (500) | Slight improvement |
+| **Exp 4: RMSNorm** | Muon | + RMSNorm | 3.04 (500) | Slight improvement |
+| **Exp 5: Sparsity** | Muon | + 2:4 Sparsity | 3.32 (300) | Worse in this run |
+| **Exp 6: QK-Norm** | Muon | + QK-Norm | 1.64 (500) | Major improvement |
+| **Exp 7: RoPE** | Muon | **+ RoPE** | **1.51 (900)** | Best run so far |
 
-**Observation:** The inclusion of **QK-Norm** and **RoPE** dropped the validation loss to **1.51** in just 900 steps. The 1.58-bit model has achieved **97% parity** with the FP32 GPT-2 benchmark (1.47) and generates coherent Shakespearean dialogue.
+**Observation:** In these Tiny Shakespeare runs, QK-Norm and RoPE were the biggest improvements. The best run reached a validation loss of about **1.51** at **900** steps, compared with a full-precision baseline around **1.47** at **5000** steps. That is encouraging, but it is still a narrow result from one small setup rather than a general benchmark claim.
 
 ---
 
 ## 🚀 Quick Start
+
+These commands follow the main path that was actually used in this repo: prepare Tiny Shakespeare, train from scratch, then sample from a saved checkpoint.
 
 ### 1. Install Dependencies
 ```sh
