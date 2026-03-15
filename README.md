@@ -46,9 +46,9 @@ To turn Karpathy's `nanoGPT` into a 1.58-bit ternary network (BitNet) and test i
 | **Baseline (FP32)** | AdamW | Absolute | 1.47 (5000) | Full Precision |
 | **BitNet (1.58b)** | AdamW | Absolute | 2.61 (5000) | Babble only |
 | **BitNet (1.58b)** | Muon + QKN | Absolute | 1.64 (500) | Coherent English |
-| **BitNet (1.58b)** | **Muon + QKN** | **RoPE** | **1.57 (500)** | **SOTA English** |
+| **BitNet (1.58b)** | **Muon + QKN** | **RoPE** | **1.51 (900)** | **SOTA English** |
 
-**Observation:** The inclusion of **RoPE** dropped the validation loss by **0.07** in just 500 steps compared to the previous best. The 1.58-bit model is now approaching parity with the FP32 GPT-2 benchmark.
+**Observation:** The inclusion of **RoPE** dropped the validation loss to **1.51** in just 900 steps. The 1.58-bit model has achieved **97% parity** with the FP32 GPT-2 benchmark (1.47).
 
 ---
 

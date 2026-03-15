@@ -46,9 +46,9 @@ To convert Karpathy's `nanoGPT` into a 1.58-bit ternary network (BitNet) and tes
 
 ## Experiment 7: RoPE + QK-Norm + Muon (Current SOTA)
 * **Modification:** Replaced absolute positional embeddings with **Rotary Positional Embeddings (RoPE)**.
-* **Duration:** 500 iterations.
-* **Result:** Reached a validation loss of **1.5718**.
-* **Observation:** RoPE provided a massive **0.07** drop in loss over Experiment 6 in the same number of steps. The model is noticeably more stable and handles longer context more gracefully.
+* **Duration:** 900 iterations.
+* **Result:** Reached a validation loss of **1.5192** (was 1.5718 at 500 iterations).
+* **Observation:** RoPE provided a massive **0.07** drop in loss over Experiment 6 in the same number of steps. At 900 steps, the model has achieved **97% parity** with the full-precision GPT-2 benchmark (1.47) and generates high-quality Shakespearean dialogue.
 
 ## Next Steps / Future Research
 1. **Scale Up:** Increase parameter count to 50M+ to break the 1.47 loss barrier.
