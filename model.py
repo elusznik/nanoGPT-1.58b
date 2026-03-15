@@ -15,6 +15,40 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+def quantize_to_158(w):
+    # 1. Find the average magnitude of the weights
+    scale = 1.0 / w.abs().mean().clamp_(min=1e-5)
+    
+    # 2. Scale, round, and clip to strictly -1, 0, or 1
+    w_quant = (w * scale).round().clamp_(-1, 1)
+    
+    # 3. THE STE TRICK: 
+    # Forward pass gets the ternary weights.
+    # Backward pass ignores the rounding and uses the original 'w' gradients.
+    return (w_quant - w).detach() + w
+
+class BitLinear(nn.Linear):
+    def __init__(self, in_features, out_features, bias=False):
+        # BitNet papers usually drop the bias for ternary layers
+        super().__init__(in_features, out_features, bias=bias)
+        # We use LayerNorm before the weights, per the BitNet paper
+        self.norm = nn.LayerNorm(in_features)
+
+    def forward(self, x):
+        # Normalize the input
+        x = self.norm(x)
+        # Quantize the weights to 1.58-bit on the fly
+        quantized_weights = quantize_to_158(self.weight)
+        
+        # --- WATCHING THE WEIGHTS ---
+        # We only print occasionally during training to avoid spamming the console
+        if self.training and torch.rand(1).item() < 0.005:
+            # We print a small 5x5 corner of the weight matrix
+            print(f"\n[BitLinear Watch] Ternary Weights Sample:\n{quantized_weights[:5, :5].detach().cpu().numpy()}")
+            
+        # Perform the linear transformation
+        return nn.functional.linear(x, quantized_weights, self.bias)
+
 class LayerNorm(nn.Module):
     """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
 
@@ -32,9 +66,9 @@ class CausalSelfAttention(nn.Module):
         super().__init__()
         assert config.n_embd % config.n_head == 0
         # key, query, value projections for all heads, but in a batch
-        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        self.c_attn = BitLinear(config.n_embd, 3 * config.n_embd, bias=config.bias)
         # output projection
-        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        self.c_proj = BitLinear(config.n_embd, config.n_embd, bias=config.bias)
         # regularization
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
@@ -79,9 +113,9 @@ class MLP(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
+        self.c_fc    = BitLinear(config.n_embd, 4 * config.n_embd, bias=config.bias)
         self.gelu    = nn.GELU()
-        self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
+        self.c_proj  = BitLinear(4 * config.n_embd, config.n_embd, bias=config.bias)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
