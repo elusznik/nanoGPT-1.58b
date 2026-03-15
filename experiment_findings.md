@@ -26,7 +26,19 @@ To convert Karpathy's `nanoGPT` into a 1.58-bit ternary network (BitNet) and tes
 * **Result:** Reached a validation loss of **3.0645**.
 * **Observation:** Stable training and slightly better early convergence than Experiment 2.
 
+## Experiment 4: Muon + Squared ReLU + RMSNorm
+* **Modification:** Swapped standard `LayerNorm` for `RMSNorm` and kept `SquaredReLU`.
+* **Duration:** 500 iterations.
+* **Result:** Reached a validation loss of **3.0410**.
+* **Observation:** RMSNorm outperformed LayerNorm in both speed and convergence. This confirms the "triple synergy" of BitNet + Muon + RMSNorm.
+
+## Experiment 5: Muon + Squared ReLU + RMSNorm + 2:4 Sparsity
+* **Modification:** Implemented 2:4 semi-structured sparsity in `BitLinear` layers.
+* **Duration:** 300 iterations (process stopped).
+* **Result:** Reached a validation loss of **3.328**.
+* **Observation:** Loss was higher than the dense version. This demonstrates that for small models (10M params), cutting 50% of connections significantly impacts capacity. However, the training was stable, confirming that ternary models are naturally resilient to sparsity.
+
 ## Next Steps / Future Research
-1. **RMSNorm:** Swap LayerNorm for RMSNorm for better stability and speed.
+1. **QK-Norm:** Add normalization to Queries and Keys to stabilize training.
 2. **Scale Up:** Increase parameter count to break the 2.0 loss barrier.
 3. **AutoResearch:** Autonomous hyperparameter tuning.

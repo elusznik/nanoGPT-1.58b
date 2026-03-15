@@ -31,34 +31,27 @@ class BitLinear(nn.Linear):
     def __init__(self, in_features, out_features, bias=False):
         # BitNet papers usually drop the bias for ternary layers
         super().__init__(in_features, out_features, bias=bias)
-        # We use LayerNorm before the weights, per the BitNet paper
-        self.norm = nn.LayerNorm(in_features)
+        # We use RMSNorm before the weights, per the BitNet paper
+        self.norm = RMSNorm(in_features)
 
     def forward(self, x):
         # Normalize the input
         x = self.norm(x)
         # Quantize the weights to 1.58-bit on the fly
         quantized_weights = quantize_to_158(self.weight)
-        
-        # --- WATCHING THE WEIGHTS ---
-        # We only print occasionally during training to avoid spamming the console
-        if self.training and torch.rand(1).item() < 0.005:
-            # We print a small 5x5 corner of the weight matrix
-            print(f"\n[BitLinear Watch] Ternary Weights Sample:\n{quantized_weights[:5, :5].detach().cpu().numpy()}")
             
         # Perform the linear transformation
         return nn.functional.linear(x, quantized_weights, self.bias)
 
-class LayerNorm(nn.Module):
-    """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
-
-    def __init__(self, ndim, bias):
+class RMSNorm(nn.Module):
+    def __init__(self, dim, bias=False):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(ndim))
-        self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
+        self.weight = nn.Parameter(torch.ones(dim))
 
-    def forward(self, input):
-        return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
+    def forward(self, x):
+        # x is (..., C)
+        ff = x.pow(2).mean(-1, keepdim=True)
+        return x * torch.rsqrt(ff + 1e-6) * self.weight
 
 class CausalSelfAttention(nn.Module):
 
@@ -67,6 +60,9 @@ class CausalSelfAttention(nn.Module):
         assert config.n_embd % config.n_head == 0
         # key, query, value projections for all heads, but in a batch
         self.c_attn = BitLinear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        # QK-Norm: stabilizers for high learning rates
+        self.q_norm = RMSNorm(config.n_embd // config.n_head)
+        self.k_norm = RMSNorm(config.n_embd // config.n_head)
         # output projection
         self.c_proj = BitLinear(config.n_embd, config.n_embd, bias=config.bias)
         # regularization
@@ -91,6 +87,10 @@ class CausalSelfAttention(nn.Module):
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+
+        # Apply QK-Norm
+        q = self.q_norm(q)
+        k = self.k_norm(k)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         if self.flash:
@@ -133,9 +133,9 @@ class Block(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
+        self.ln_1 = RMSNorm(config.n_embd, bias=config.bias)
         self.attn = CausalSelfAttention(config)
-        self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
+        self.ln_2 = RMSNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)
 
     def forward(self, x):
@@ -166,7 +166,7 @@ class GPT(nn.Module):
             wpe = nn.Embedding(config.block_size, config.n_embd),
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
-            ln_f = LayerNorm(config.n_embd, bias=config.bias),
+            ln_f = RMSNorm(config.n_embd, bias=config.bias),
         ))
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:
