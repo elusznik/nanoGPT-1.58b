@@ -299,26 +299,39 @@ class GPT(nn.Module):
         param_dict = {pn: p for pn, p in self.named_parameters()}
         # filter out those that do not require grad
         param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
-        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
-        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
-        decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
-        nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
-        optim_groups = [
-            {'params': decay_params, 'weight_decay': weight_decay},
-            {'params': nodecay_params, 'weight_decay': 0.0}
-        ]
-        num_decay_params = sum(p.numel() for p in decay_params)
-        num_nodecay_params = sum(p.numel() for p in nodecay_params)
-        print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
-        print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
-        # Create AdamW optimizer and use the fused version if it is available
+        
+        # SOTA Hybrid Optimizer Split:
+        # Muon handles all 2D parameter tensors (the matrices)
+        # AdamW handles all 1D parameter tensors (biases, layernorms, embeddings)
+        muon_params = [p for n, p in param_dict.items() if p.dim() >= 2]
+        adamw_params = [p for n, p in param_dict.items() if p.dim() < 2]
+        
+        num_muon_params = sum(p.numel() for p in muon_params)
+        num_adamw_params = sum(p.numel() for p in adamw_params)
+        print(f"num 2D parameter tensors (Muon): {len(muon_params)}, with {num_muon_params:,} parameters")
+        print(f"num 1D parameter tensors (AdamW): {len(adamw_params)}, with {num_adamw_params:,} parameters")
+        
+        # Create AdamW optimizer for 1D params
         fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
         use_fused = fused_available and device_type == 'cuda'
         extra_args = dict(fused=True) if use_fused else dict()
-        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
-        print(f"using fused AdamW: {use_fused}")
-
-        return optimizer
+        adamw_optim = torch.optim.AdamW(adamw_params, lr=learning_rate, betas=betas, **extra_args)
+        print(f"using fused AdamW for 1D params: {use_fused}")
+        
+        # Try to import and create Muon for 2D params
+        try:
+            from optimizers.muon import Muon
+            # We use a higher learning rate for Muon as is standard practice
+            muon_optim = Muon(muon_params, lr=0.02, momentum=0.95)
+            print("using Muon optimizer for 2D params")
+            return [muon_optim, adamw_optim]
+        except ImportError:
+            print("Muon not found, falling back to pure AdamW for all params")
+            optim_groups = [
+                {'params': muon_params, 'weight_decay': weight_decay},
+                {'params': adamw_params, 'weight_decay': 0.0}
+            ]
+            return torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
 
     def estimate_mfu(self, fwdbwd_per_iter, dt):
         """ estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS """

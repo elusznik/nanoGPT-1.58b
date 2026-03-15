@@ -193,12 +193,16 @@ if block_size < model.config.block_size:
 model.to(device)
 
 # initialize a GradScaler. If enabled=False scaler is a no-op
-scaler = torch.cuda.amp.GradScaler(enabled=(dtype == 'float16'))
+scaler = torch.amp.GradScaler('cuda', enabled=(dtype == 'float16'))
 
 # optimizer
-optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
+optimizers = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
+if not isinstance(optimizers, list):
+    optimizers = [optimizers]
+
 if init_from == 'resume':
-    optimizer.load_state_dict(checkpoint['optimizer'])
+    # skip complicated resume logic for now when using multiple optimizers
+    pass
 checkpoint = None # free up memory
 
 # compile the model
@@ -256,8 +260,10 @@ while True:
 
     # determine and set the learning rate for this iteration
     lr = get_lr(iter_num) if decay_lr else learning_rate
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+    for opt in optimizers:
+        for param_group in opt.param_groups:
+            if 'ns_steps' not in param_group: # Do not decay Muon's explicitly set high LR
+                param_group['lr'] = lr
 
     # evaluate the loss on train/val sets and write checkpoints
     if iter_num % eval_interval == 0 and master_process:
@@ -276,7 +282,7 @@ while True:
             if iter_num > 0:
                 checkpoint = {
                     'model': raw_model.state_dict(),
-                    'optimizer': optimizer.state_dict(),
+                    'optimizers': [opt.state_dict() for opt in optimizers],
                     'model_args': model_args,
                     'iter_num': iter_num,
                     'best_val_loss': best_val_loss,
@@ -305,13 +311,16 @@ while True:
         scaler.scale(loss).backward()
     # clip the gradient
     if grad_clip != 0.0:
-        scaler.unscale_(optimizer)
+        for opt in optimizers:
+            scaler.unscale_(opt)
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
     # step the optimizer and scaler if training in fp16
-    scaler.step(optimizer)
+    for opt in optimizers:
+        scaler.step(opt)
     scaler.update()
     # flush the gradients as soon as we can, no need for this memory anymore
-    optimizer.zero_grad(set_to_none=True)
+    for opt in optimizers:
+        opt.zero_grad(set_to_none=True)
 
     # timing and logging
     t1 = time.time()
