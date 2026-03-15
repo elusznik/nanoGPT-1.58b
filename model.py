@@ -109,12 +109,16 @@ class CausalSelfAttention(nn.Module):
         y = self.resid_dropout(self.c_proj(y))
         return y
 
+class SquaredReLU(nn.Module):
+    def forward(self, x):
+        return F.relu(x) ** 2
+
 class MLP(nn.Module):
 
     def __init__(self, config):
         super().__init__()
         self.c_fc    = BitLinear(config.n_embd, 4 * config.n_embd, bias=config.bias)
-        self.gelu    = nn.GELU()
+        self.gelu    = SquaredReLU()
         self.c_proj  = BitLinear(4 * config.n_embd, config.n_embd, bias=config.bias)
         self.dropout = nn.Dropout(config.dropout)
 
